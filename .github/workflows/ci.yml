@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  docker-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t app-ci .
+
+      - name: Run unit tests
+        run: docker run --rm app-ci python -m pytest
+
+      - name: Smoke test
+        run: |
+          cid=$(docker run -d -p 5000:5000 app-ci)
+          for i in {1..10}; do
+            curl -fs http://localhost:5000 && break
+            sleep 1
+          done
+          docker rm -f "$cid"
