@@ -1,9 +1,26 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-.env
-.venv
-env/
+.pytest_cache/
+.venv/
 venv/
+env/
+
+# Secrets and local environment
+secrets/
+.secrets/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.tfstate*
+credentials*
+
+# Editors, worktrees, OS junk
 .idea/
 .vscode/
+.worktrees/
+.DS_Store
+Thumbs.db

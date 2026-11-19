@@ -1,183 +1,88 @@
-# Docker Flask Lab (Bootstrap-Aligned)
+# docker-flask-app
 
-This repository contains a **minimal Flask application** designed to be run inside Docker,
-with a **VM bootstrap script** that prepares a disposable lab environment.
+A minimal Flask app in Docker, plus helper scripts that turn a fresh Ubuntu VM into a disposable Docker/Terraform/Ansible lab and tear it down again.
 
-This project intentionally separates:
+## Status
 
-- **Infrastructure bootstrapping**
-- **Application build & runtime**
-- **Lab reset and teardown**
+**Active, small by design.** It is a learning and CI-validation lab, not a production template. The helper scripts are deliberately insecure (see [SECURITY.md](SECURITY.md)).
 
-No assumptions. No magic.
+## What it does
 
----
+- Serves one page (`/`) that answers `Hello from Dockerized Flask App! Running on <container hostname>`.
+- Builds and runs in Docker via `Dockerfile` and `docker-compose.yml`.
+- Ships a GitHub Actions workflow that builds the image, runs the unit test inside it and smoke-tests the running container.
+- Ships three Bash scripts for a throwaway Ubuntu VM: `bootstrap` (install tooling), `reset-lab` (soft reset) and `nuke-vm` (purge everything).
 
-## Repository Contents
+## How it works
 
-```text
-.
-├── bootstrap.sh
-├── nuke_vm.sh
-├── reset_lab.sh
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-├── app.py
-├── LICENSE
-├── app/
-│   ├── __init__.py
-│   └── routes.py
-├── tests/
-│   └── test_health.py
-├── .github/workflows/ci.yml
-└── README.md
+```
+app.py            entry point: create_app().run(0.0.0.0:5000)
+app/__init__.py   application factory, registers the blueprint
+app/routes.py     blueprint with the "/" route
+Dockerfile        python:3.11-slim, installs requirements.txt, runs app.py
+docker-compose.yml  one service "web", port 5000
 ```
 
----
+The VM scripts are independent of the app: `scripts/bootstrap.sh` prepares the machine, you then clone this repository on it and run `docker-compose up --build` yourself.
 
-## Execution Model (Authoritative)
+## Quick start
 
-This repository is intended to be used on a **fresh Linux VM**.
-
-The workflow is:
-
-1. Provision a raw VM
-2. SSH into the VM
-3. Copy and execute `bootstrap.sh`
-4. Manually deploy and test the application
-5. Reset or destroy the lab
-
-The VM is disposable by design.
-
----
-
-## Bootstrap Script (`bootstrap.sh`)
-
-The bootstrap script performs **environment preparation only**.
-
-### What it does
-
-- Installs Docker CE
-- Installs docker-compose (standalone)
-- Enables Docker TCP on `GUEST_IP:2375`
-- Configures UFW to allow:
-
-  - SSH (22)
-  - Docker TCP (2375)
-  - Flask app (5000)
-  - **Only from the SSH client IP**
-- Installs:
-
-  - Terraform
-  - Ansible
-  - AWS CLI
-  - yq
-  - lazygit
-- Creates a **bare Git repository** on the VM:
-
-```text
-/home/<user>/repos/docker-flask-app.git
-```
-
-### What it does NOT do
-
-- Does NOT clone this repository
-- Does NOT run `docker compose`
-- Does NOT deploy the application
-
-This is intentional.
-
----
-
-## Running the Bootstrap
-
-From your local machine:
+Run the app (needs Docker):
 
 ```bash
-scp bootstrap.sh user@VM_IP:/tmp/bootstrap.sh
+docker compose up --build        # or: docker-compose up --build
+# open http://localhost:5000
+```
+
+Run without Docker:
+
+```bash
+python -m pip install -r requirements.txt
+python app.py
+```
+
+### Disposable VM lab (optional, Ubuntu only)
+
+```bash
+scp scripts/bootstrap.sh user@VM_IP:/tmp/bootstrap.sh
 ssh user@VM_IP
-chmod +x /tmp/bootstrap.sh
-sudo /tmp/bootstrap.sh
+sudo bash /tmp/bootstrap.sh      # installs Docker, docker-compose, Terraform, Ansible, AWS CLI, yq, lazygit, UFW rules
+# reboot recommended, then clone this repo on the VM and run the app
 ```
 
-A reboot after completion is recommended.
+Soft reset (keep tooling): `./scripts/reset-lab.sh`. Hard reset (purge Docker, Terraform, Ansible, AWS CLI, firewall): `sudo ./scripts/nuke-vm.sh`. Both are destructive and assume a VM you are happy to lose. Run them from the repository root.
 
----
+`scripts/bootstrap.sh` exposes the Docker API on TCP 2375 without TLS, restricted by UFW to the SSH client IP. Do not use it on any machine that matters.
 
-## Application Deployment (Manual)
+The scripts are also used, in a more hardened variant, by [terraform-localstack-s3](https://github.com/MSotoudeh/terraform-localstack-s3); see [docs/lab-scripts.md](docs/lab-scripts.md).
 
-After bootstrap, clone or copy this repository onto the VM:
+## Configuration
 
-```bash
-git clone <this-repo-url>
-cd <repo>
+No environment file is needed. The scripts read these environment variables: `SUDO_USER` / `USER` (account that gets Docker access and the bare repo) and `SSH_CLIENT` (client IP allowed through the firewall). There is no `.env.example` because nothing else is configurable.
+
+## Project layout
+
 ```
-
-Build and start the app:
-
-```bash
-docker-compose up --build
+app/        Flask application package (factory + routes)
+tests/      pytest unit test
+scripts/    bootstrap.sh, reset-lab.sh, nuke-vm.sh (Ubuntu VM lab helpers)
+docs/       history and notes on the shared lab scripts
+.github/    CI workflow
 ```
-
-The Flask app will be available on:
-
-```text
-http://VM_IP:5000
-```
-
----
 
 ## Testing
 
-### Local container status
-
 ```bash
-docker ps
+python -m pip install -r requirements.txt
+python -m pytest
 ```
 
-### Run tests inside the container (example)
+Syntax check of the scripts: `bash -n scripts/*.sh`. CI additionally builds the image and smoke-tests port 5000.
 
-```bash
-docker-compose exec web pytest
-```
+## Contributing
 
----
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Resetting the Lab (Soft Reset)
+## License
 
-To remove containers, images, volumes, and cached state:
-
-```bash
-./reset_lab.sh
-```
-
-This keeps Docker and tooling installed.
-
----
-
-## Destroying the Lab (Hard Reset)
-
-To purge Docker, Terraform, Ansible, AWS CLI, firewall rules, and all lab artifacts:
-
-```bash
-sudo ./nuke_vm.sh
-```
-
-The VM is expected to be discarded afterward.
-
----
-
-## Notes and Constraints
-
-- Docker TCP (`2375`) is enabled **without TLS**
-- Firewall access is restricted to the SSH client IP
-- No security hardening is applied
-- This setup is **not production-safe**
-
-This repository is intended strictly for:
-
-- Learning
-- Testing
-- CI validation
-- Disposable lab environments
+[MIT](LICENSE)
